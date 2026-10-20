@@ -221,10 +221,11 @@ p{margin:0}
 var SHEET_URL='https://script.google.com/macros/s/AKfycbyKbxMPdjkdHQUfasdG_MTiqS06VUFRy1ooApfMc8bdFoHDqYy1_d4_nYghn97_iFn7/exec';
 var SCHOOL='Manila Central University';
 var PASS=50;
-/* Times are Philippine Standard Time (UTC+08:00) */
+/* Times are Philippine Standard Time (UTC+08:00).
+   any:true = open anytime; lim = minutes allowed once the examinee begins (auto-submitted when it runs out). */
 var SUBJ=[
- {k:'anat',n:'Anatomy and Histology',e:'🦴',c:'#B3261E',o:'2026-10-20T14:09',x:'2026-10-20T15:00'},
- {k:'bio',n:'Biochemistry',e:'🧪',c:'#B45309',o:'2026-10-20T15:00',x:'2026-10-20T15:10'},
+ {k:'anat',n:'Anatomy and Histology',e:'🦴',c:'#B3261E',any:true,lim:120},
+ {k:'bio',n:'Biochemistry',e:'🧪',c:'#B45309',any:true,lim:120},
  {k:'phy',n:'Physiology',e:'🫀',c:'#0E7C6B',o:'2026-11-07T09:00',x:'2026-11-07T11:00'},
  {k:'micro',n:'Microbiology and Parasitology',e:'🦠',c:'#2E7D32',o:'2026-11-07T13:00',x:'2026-11-07T15:00'},
  {k:'pharma',n:'Pharmacology and Therapeutics',e:'💊',c:'#6D28D9',o:'2026-11-14T09:00',x:'2026-11-14T11:00'},
@@ -240,7 +241,9 @@ var SUBJ=[
 (function(){
 'use strict';
 var LT='ABCD', PER=10, NQ=100;
-SUBJ.forEach(function(s){s.O=Date.parse(s.o+':00+08:00'); s.X=Date.parse(s.x+':00+08:00')});
+SUBJ.forEach(function(s){ if(s.any){s.O=0; s.X=Infinity} else {s.O=Date.parse(s.o+':00+08:00'); s.X=Date.parse(s.x+':00+08:00')}});
+function flim(m){return m%60?m+' minutes':(m/60)+'-hour'}
+function dl(s,X){var d=s.X; if(s.lim&&X&&X.st)d=Math.min(d,X.st+s.lim*60000); return d}
 function $(s,r){return (r||document).querySelector(s)} function $$(s,r){return [].slice.call((r||document).querySelectorAll(s))}
 function esc(t){return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 var LS={get:function(k){try{return localStorage.getItem(k)}catch(e){return null}},set:function(k,v){try{localStorage.setItem(k,v)}catch(e){}},del:function(k){try{localStorage.removeItem(k)}catch(e){}}};
@@ -264,7 +267,7 @@ function clk(ms){var p=parts(ms); return (p.d?p.d+'d ':'')+(p.d||p.h?two(p.h)+':
 var DOPT={timeZone:'Asia/Manila'};
 function fdate(t){return new Date(t).toLocaleDateString('en-PH',Object.assign({weekday:'short',month:'long',day:'numeric',year:'numeric'},DOPT))}
 function ftime(t){return new Date(t).toLocaleTimeString('en-PH',Object.assign({hour:'numeric',minute:'2-digit'},DOPT))}
-function fwhen(s){return fdate(s.O)+' · '+ftime(s.O)+' – '+ftime(s.X)}
+function fwhen(s){ if(s.any)return 'Open anytime · '+flim(s.lim)+' limit once you begin'; return fdate(s.O)+' · '+ftime(s.O)+' – '+ftime(s.X)}
 function fdur(ms){var p=parts(ms); return (p.h?p.h+' h ':'')+p.m+' min '+p.s+' s'}
 /* ---- theme ---- */
 var root=document.documentElement;
@@ -289,7 +292,7 @@ $('#nav').addEventListener('click',function(e){var b=e.target.closest('button');
 $('#menuBtn').addEventListener('click',function(){$('#rail').classList.toggle('open')});
 function paintNav(){SUBJ.forEach(function(s){var st=stateOf(s), sm=$('small',NAV[s.k]);
   var lab={soon:'<span class="chip soon">Soon</span>',open:'<span class="chip open">Open</span>',done:'<span class="chip done">Done</span>',miss:'<span class="chip miss">Missed</span>'}[st];
-  var h=new Date(s.O).toLocaleDateString('en-PH',Object.assign({month:'short',day:'numeric'},DOPT))+' · '+ftime(s.O)+lab; if(sm.innerHTML!==h)sm.innerHTML=h});
+  var h=s.any?'Open anytime'+lab:new Date(s.O).toLocaleDateString('en-PH',Object.assign({month:'short',day:'numeric'},DOPT))+' · '+ftime(s.O)+lab; if(sm.innerHTML!==h)sm.innerHTML=h});
   Object.keys(NAV).forEach(function(k){NAV[k].classList.toggle('on',k===view.k)})}
 /* ---- identity and server ---- */
 var SRV=/^https:\/\/script\.google\.com\//.test(SHEET_URL);
@@ -337,17 +340,18 @@ function home(){$('#topT').textContent='Schedule & results';
   var D=SUBJ.filter(function(s){return ST.done[s.k]});
   if(D.length){var tc=0; D.forEach(function(s){tc+=ST.done[s.k].c}); h+='<div class="card"><h3>Summary</h3><div class="grid2"><div class="fact"><span class="k">Subjects taken</span><b>'+D.length+' of 12</b></div><div class="fact"><span class="k">Average</span><b>'+Math.round(tc/D.length)+'%</b></div><div class="fact"><span class="k">Passed</span><b>'+D.filter(function(s){return ST.done[s.k].p>=PASS}).length+'</b></div></div></div>'}
   V.innerHTML=h}
-function stLabel(s){var st=stateOf(s), t=now(); if(st==='soon')return 'Opens in '+clk(s.O-t); if(st==='open')return 'OPEN · closes in '+clk(s.X-t); if(st==='done')return 'Submitted'; return 'Missed'}
+function stLabel(s){var st=stateOf(s), t=now(); if(st==='soon')return 'Opens in '+clk(s.O-t); if(st==='open')return s.any?'OPEN · anytime':'OPEN · closes in '+clk(s.X-t); if(st==='done')return 'Submitted'; return 'Missed'}
 function plate(s){setPC(s.c); $('#topT').textContent=s.n; var st=stateOf(s), t=now(), tos=P[s.k];
   var h='<header class="banner" style="--k:'+s.c+'"><div class="big">'+s.e+'</div><div><div class="eyebrow">PLE Benchmark Examination · MCU Clerk</div><h2>'+esc(s.n)+'</h2><div class="sub">Manila Central University · 100 items · '+fwhen(s)+'</div></div></header>';
   if(st==='done'){V.innerHTML=h+report(s); return}
   h+='<div class="card center">';
   if(st==='soon')h+='<div class="k">The examination opens in</div><div class="count" id="cd">'+cdHTML(s.O-t)+'</div><p class="lead">'+fwhen(s)+'</p><p class="lead" style="font-size:.88rem;margin-top:6px">Keep this page open. The paper opens by itself at the start time.</p>';
+  else if(st==='open'&&s.any)h+='<div class="k">Open anytime</div><h3 style="margin-top:6px">You may take this examination whenever you are ready.</h3><p class="lead">Once you begin, you have a '+flim(s.lim)+' limit'+(ST.ex[s.k]?' (your time is already running)':'')+'. The paper is submitted automatically when the time runs out, finished or not.</p><p style="margin-top:14px"><button type="button" class="btn" id="begin">'+(ST.ex[s.k]?'▶ Resume the examination':'▶ Begin the examination')+'</button></p>';
   else if(st==='open')h+='<div class="k">The examination is OPEN · it closes in</div><div class="count" id="cd">'+cdHTML(s.X-t)+'</div><p class="lead">The paper is submitted automatically at '+ftime(s.X)+', finished or not.</p><p style="margin-top:14px"><button type="button" class="btn" id="begin">'+(ST.ex[s.k]?'▶ Resume the examination':'▶ Begin the examination')+'</button></p>';
   else h+='<div class="k">Closed</div><h3 style="margin-top:6px">This examination closed on '+fdate(s.X)+' at '+ftime(s.X)+'.</h3><p class="lead">No paper was submitted under your name, so it is recorded as missed.</p>';
   h+='</div>';
   h+='<div class="card"><h3>Before you begin</h3><div class="grid2"><div class="fact"><span class="k">Examinee</span><b>'+esc(ST.name||'—')+'</b></div><div class="fact"><span class="k">Medical school</span><b>'+SCHOOL+'</b></div></div>';
-  h+='<ul class="rules"><li>You may take this subject <b>once</b>. There are no trials or retakes.</li><li>The clock runs to the closing time, not from when you begin. Starting late leaves you less time.</li><li>At closing time your answers are submitted automatically, finished or not. Blank items are counted as wrong.</li><li>One device per examinee: signing in on another device signs this one out. Your answers and scores follow your name to the new device.</li><li>Your score is uploaded automatically to the official record together with your name.</li><li>Copying, printing, right-clicking and screenshots are blocked. Leaving the exam window hides the questions and is recorded.</li></ul>';
+  h+='<ul class="rules"><li>You may take this subject <b>once</b>. There are no trials or retakes.</li>'+(s.any?'<li>You have a '+flim(s.lim)+' limit from the moment you begin. The clock keeps running if you close the page or switch devices.</li><li>When the time runs out your answers':'<li>The clock runs to the closing time, not from when you begin. Starting late leaves you less time.</li><li>At closing time your answers')+' are submitted automatically, finished or not. Blank items are counted as wrong.</li><li>One device per examinee: signing in on another device signs this one out. Your answers and scores follow your name to the new device.</li><li>Your score is uploaded automatically to the official record together with your name.</li><li>Copying, printing, right-clicking and screenshots are blocked. Leaving the exam window hides the questions and is recorded.</li></ul>';
   h+='<details style="margin-top:12px"><summary class="k" style="cursor:pointer">Items per topic (Table of Specifications)</summary><div style="margin-top:8px">'+tosBars(s.k)+'</div></details></div>';
   V.innerHTML=h; var b=$('#begin'); if(b)b.addEventListener('click',function(){begin(s)})}
 function tosBars(k){var c=[]; P[k].dom.forEach(function(){c.push(0)}); P[k].q.forEach(function(q){c[q[3]]++}); var mx=Math.max.apply(null,c);
@@ -359,7 +363,7 @@ function begin(s){ if(!ST.name){gate(); return} if(stateOf(s)!=='open')return re
   if(!ST.ex[s.k])ST.ex[s.k]={st:now(),ans:{},sw:0}; ST.cur=s.k; touch(); pg=0; confirmOn=false; render(); $('#stage').scrollTop=0}
 function wm(){var n=(ST.name||'')+' · MCU Clerk'; var svg='<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><text x="20" y="120" transform="rotate(-24 180 100)" font-family="Arial" font-size="15" fill="rgba(128,128,128,0.13)">'+esc(n)+'</text></svg>'; return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")'}
 function exam(){var s=subj(ST.cur), X=ST.ex[s.k], Q=P[s.k].q; setPC(s.c); $('#topT').textContent=s.n+' · examination';
-  var h='<div class="xh"><span class="t">'+s.e+' '+esc(s.n)+'</span><span id="xa"></span><span class="meter"><i id="xm"></i></span><span class="sp"></span><span class="k">Closes in</span><span class="clock" id="xc">'+clk(s.X-now())+'</span><button type="button" class="btn sm" id="xs">Submit</button></div>';
+  var h='<div class="xh"><span class="t">'+s.e+' '+esc(s.n)+'</span><span id="xa"></span><span class="meter"><i id="xm"></i></span><span class="sp"></span><span class="k">'+(s.any?'Time left':'Closes in')+'</span><span class="clock" id="xc">'+clk(dl(s,X)-now())+'</span><button type="button" class="btn sm" id="xs">Submit</button></div>';
   h+='<div class="confirm" id="xconf" hidden></div>';
   h+='<div class="desk"><div><div class="paper" id="paper" style="background-image:'+wm()+'"></div><div class="pnav"><button type="button" class="btn ghost sm" id="pv">← Previous</button><div class="pgs" id="pgs"></div><span class="sp"></span><button type="button" class="btn sm" id="nx">Next →</button></div></div>';
   h+='<aside class="sheet"><h4>Answer sheet</h4><div class="nm">'+esc(ST.name)+'<br>'+SCHOOL+'</div><div class="rows" id="rows">';
@@ -393,7 +397,7 @@ function marks(){var X=ST.ex[ST.cur], n=nAns(); $$('.bub[data-q]').forEach(funct
 function grade(k,X){var Q=P[k].q, c=0, bl=0, dm=P[k].dom.map(function(){return [0,0]}), ans=[];
   Q.forEach(function(q,i){var a=(i in X.ans)?X.ans[i]:-1, ok=a===q[2]; if(ok)c++; if(a<0)bl++; dm[q[3]][1]++; if(ok)dm[q[3]][0]++; ans.push((i+1)+':'+(a<0?'-':LT[a])+':'+(ok?1:0))});
   return {c:c,bl:bl,dm:dm,ans:ans.join(' ')}}
-function submit(mode,k){k=k||ST.cur; var s=subj(k), X=ST.ex[k]; if(!X||ST.done[k])return; var t=Math.min(now(),s.X), g=grade(k,X), p=Math.round(g.c/NQ*100);
+function submit(mode,k){k=k||ST.cur; var s=subj(k), X=ST.ex[k]; if(!X||ST.done[k])return; var t=Math.min(now(),dl(s,X)), g=grade(k,X), p=Math.round(g.c/NQ*100);
   var R={c:g.c,p:p,bl:g.bl,dm:g.dm,at:t,st:X.st,used:Math.max(0,t-X.st),mode:mode,sw:X.sw||0,sent:0,id:k+'-'+ST.dev};
   ST.done[k]=R; if(ST.cur===k)ST.cur=null; confirmOn=false;
   var data=JSON.parse(JSON.stringify(R)); delete data.sent;
@@ -415,8 +419,8 @@ function report(s){var R=ST.done[s.k], pass=R.p>=PASS, dom=P[s.k].dom;
 /* ---- clock ---- */
 var last={};
 function tick(){var t=now();
-  SUBJ.forEach(function(s){var X=ST.ex[s.k]; if(X&&!ST.done[s.k]&&t>=s.X)submit('Auto-submitted at closing time',s.k)});
-  if(ST.cur){var s=subj(ST.cur), c=$('#xc'); if(c){var l=s.X-t; c.textContent=clk(l); c.classList.toggle('low',l<=60000)}}
+  SUBJ.forEach(function(s){var X=ST.ex[s.k]; if(X&&!ST.done[s.k]&&t>=dl(s,X))submit(s.any?'Auto-submitted when time ran out':'Auto-submitted at closing time',s.k)});
+  if(ST.cur){var s=subj(ST.cur), c=$('#xc'); if(c){var l=dl(s,ST.ex[s.k])-t; c.textContent=clk(l); c.classList.toggle('low',l<=60000)}}
   else if(view.k!=='home'){var s2=subj(view.k), st=stateOf(s2); if(last.k===s2.k&&last.st!==st){ if(st==='open'&&ST.name){begin(s2); last={k:s2.k,st:st}; return} render()} last={k:s2.k,st:st};
     var cd=$('#cd'); if(cd)cd.innerHTML=cdHTML(st==='soon'?s2.O-t:s2.X-t)}
   else {$$('[data-st]').forEach(function(e){var s3=subj(e.dataset.st); e.textContent=stLabel(s3); e.className='st '+stateOf(s3)})}
