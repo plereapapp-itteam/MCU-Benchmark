@@ -42,6 +42,9 @@ p{margin:0}
 .brand h1{font-size:1.02rem}
 .who{border:1px solid var(--rail-line);background:var(--rail-2);border-radius:var(--r);padding:10px 12px;font-size:.8rem;color:var(--rail-soft)}
 .who b{display:block;color:var(--rail-ink);font-size:.95rem;word-break:break-word}
+#outBtn{display:block;width:100%;margin-top:8px;border:1px solid var(--rail-line);border-radius:8px;padding:5px 8px;text-align:center;font-size:.78rem;color:var(--rail-ink)}
+#outBtn:hover{background:var(--rail-line)}
+#outBtn.sure{background:#B3261E;border-color:#B3261E;color:#fff}
 .nav-h{font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--rail-soft);font-weight:700;border-bottom:1px solid var(--rail-line);padding:0 8px 6px}
 .nav{display:flex;flex-direction:column;gap:3px}
 .nav button{display:grid;grid-template-columns:30px 1fr;align-items:center;gap:10px;padding:7px 8px;border-radius:10px;color:var(--rail-soft);font-size:.88rem;transition:background .2s,color .2s}
@@ -187,7 +190,7 @@ html.blk .stage{visibility:hidden}
         <h1>Manila Central University</h1>
       </div>
     </div>
-    <div class="who" id="who">Examinee<b id="whoN">—</b>Manila Central University</div>
+    <div class="who" id="who">Examinee<b id="whoN">—</b>Manila Central University<button type="button" id="outBtn" hidden>Sign out</button></div>
     <div class="nav-h">PLE Benchmark Examination</div>
     <nav class="nav" id="nav"><button type="button" data-go="home" style="--k:#9A6B12"><span class="num">🗓️</span><span>Schedule &amp; results<small>All 12 subjects</small></span></button></nav>
     <div class="tools">
@@ -301,7 +304,7 @@ function paintNav(){SUBJ.forEach(function(s){var st=stateOf(s), sm=$('small',NAV
 var SRV=/^https:\/\/script\.google\.com\//.test(SHEET_URL);
 function api(o){return fetch(SHEET_URL,{method:'POST',body:JSON.stringify(o)}).then(function(r){return r.json()})}
 function nameOK(n){return n.length>=5&&n.split(/\s+/).length>=2}
-function gate(){$('#srvNote').hidden=SRV; if(ST.name){$('#gate').hidden=true; $('#whoN').textContent=ST.name; return} $('#whoN').textContent='—'; $('#gate').hidden=false; setTimeout(function(){$('#nameIn').focus()},50)}
+function gate(){$('#srvNote').hidden=SRV; $('#outBtn').hidden=!ST.name; $('#outBtn').classList.remove('sure'); $('#outBtn').textContent='Sign out'; if(ST.name){$('#gate').hidden=true; $('#whoN').textContent=ST.name; return} $('#whoN').textContent='—'; $('#gate').hidden=false; setTimeout(function(){$('#nameIn').focus()},50)}
 $('#nameGo').addEventListener('click',function(){var n=$('#nameIn').value.replace(/\s+/g,' ').trim().toUpperCase(), b=this;
   if(!nameOK(n)){$('#nameErr').textContent='Please enter your full name (first and last name).'; return}
   if(!$('#nameOk').checked){$('#nameErr').textContent='Please tick the confirmation box.'; return}
@@ -315,8 +318,8 @@ function signedIn(n,tok,r){ if(ST.name!==n){ST.ex={}; ST.done={}; ST.cur=null} S
   save(); $('#gateMsg').hidden=true; gate(); view={k:ST.cur||defaultSubject()}; render(); flush()}
 function merge(r){ if(r.done)Object.keys(r.done).forEach(function(k){ if(!r.done[k]||!r.done[k].at)return; ST.done[k]=r.done[k]; ST.done[k].sent=ST.done[k].sent||1; if(ST.cur===k)ST.cur=null});
   if(r.prog)Object.keys(r.prog).forEach(function(k){var p=r.prog[k], L=ST.ex[k]; if(!p||ST.done[k])return; if(!L||(p.u||0)>(L.u||0))ST.ex[k]=p})}
-function signOut(){ST.name=''; ST.tok=null; ST.cur=null; ST.ex={}; ST.done={}; save(); $('#shield').hidden=true; confirmOn=false;
-  var m=$('#gateMsg'); m.textContent='This device was signed out because your name was signed in on another device. Only one device per examinee is allowed. Your answers and scores are kept under your name. Signing in again here will sign out the other device.'; m.hidden=false;
+function signOut(msg){ST.name=''; ST.tok=null; ST.cur=null; ST.ex={}; ST.done={}; save(); $('#shield').hidden=true; confirmOn=false;
+  var m=$('#gateMsg'); m.textContent=msg||'This device was signed out because your name was signed in on another device. Only one device per examinee is allowed. Your answers and scores are kept under your name. Signing in again here will sign out the other device.'; m.hidden=false;
   $('#nameIn').value=''; $('#nameOk').checked=false; gate(); view={k:'home'}; render()}
 var dirty=false, syncT=0, syncing=false;
 function touch(){ if(ST.cur&&ST.ex[ST.cur])ST.ex[ST.cur].u=Date.now(); save(); dirty=true; clearTimeout(syncT); syncT=setTimeout(sync,4000)}
@@ -326,6 +329,13 @@ function sync(){ if(!SRV||!ST.name||!ST.tok||syncing)return; syncing=true; var o
     if(r&&r.done){var ch=false; Object.keys(r.done).forEach(function(k){ if(!ST.done[k]&&r.done[k]&&r.done[k].at){ST.done[k]=r.done[k]; ST.done[k].sent=1; if(ST.cur===k)ST.cur=null; ch=true}}); if(ch){save(); render()}}})
   .catch(function(){syncing=false; if(wd)dirty=true})}
 setInterval(sync,30000);
+var outT=0;
+$('#outBtn').addEventListener('click',function(){var b=this;
+  if(ST.cur){toast('Submit your examination before signing out. To continue on another device, just sign in there.'); return}
+  if(!b.classList.contains('sure')){b.classList.add('sure'); b.textContent='Tap again to sign out'; clearTimeout(outT); outT=setTimeout(function(){b.classList.remove('sure'); b.textContent='Sign out'},4000); return}
+  var tok=ST.tok, n=ST.name; if(SRV&&tok)api({action:'signout',name:n,token:tok}).catch(function(){});
+  $('#rail').classList.remove('open');
+  signOut('You have signed out. Your scores are kept under your name. Sign in again with the same full name to continue.')});
 /* ---- views ---- */
 var view={k:'home'}, V=$('#view');
 function subj(k){for(var i=0;i<SUBJ.length;i++)if(SUBJ[i].k===k)return SUBJ[i]}
