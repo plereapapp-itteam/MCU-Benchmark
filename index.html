@@ -3,15 +3,15 @@
    Deploy → New deployment → Web app · Execute as: Me · Who has access: Anyone.
    (When updating: Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy,
    so the /exec URL stays the same.) */
- 
+
 var SHEET_ID = '11_lpsZZjR7YlWm5B8wt2EcYcNjLGFuE3vKnO1jdYmFo';
 var KEYS = ['anat','bio','phy','micro','pharma','path','im','surg','ob','pedia','prev','legal'];
 var HEAD = ['Timestamp','Full Name','Medical School','Subject','Score','Total','Percent','Remark','Answered','Blank',
             'Time Used','Submitted By','Tab Switches','Started','Submitted','Device ID','Answers (item:choice:correct)','Key','Data'];
 var HOURS6 = 21600;
- 
+
 function doGet() { return out({ ok: true, service: 'MCU Clerk PLE REAP' }); }
- 
+
 function doPost(e) {
   var d;
   try { d = JSON.parse(e.postData.contents); } catch (x) { return out({ ok: false, error: 'bad request' }); }
@@ -27,17 +27,17 @@ function doPost(e) {
     return out({ ok: false, error: 'unknown action' });
   } finally { lock.releaseLock(); }
 }
- 
+
 function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function cache() { return CacheService.getScriptCache(); }
 function props() { return PropertiesService.getScriptProperties(); }
- 
+
 function tab(n, head) {
   var ss = SpreadsheetApp.openById(SHEET_ID), s = ss.getSheetByName(n);
   if (!s) { s = ss.insertSheet(n); s.appendRow(head); s.setFrozenRows(1); }
   return s;
 }
- 
+
 /* results already recorded for this name, keyed by subject */
 function doneOf(name, fresh) {
   var C = cache(), c = fresh ? null : C.get('d:' + name);
@@ -51,7 +51,7 @@ function doneOf(name, fresh) {
   C.put('d:' + name, JSON.stringify(m), HOURS6);
   return m;
 }
- 
+
 function tokenOf(name) {
   var t = cache().get('t:' + name);
   if (t) return t;
@@ -60,7 +60,7 @@ function tokenOf(name) {
   if (t) cache().put('t:' + name, t, HOURS6);
   return t;
 }
- 
+
 /* a new sign-in replaces the token, so the previous device is signed out at its next check */
 function signin(name, d) {
   var tok = Utilities.getUuid(), prev = props().getProperty('t:' + name);
@@ -74,7 +74,7 @@ function signin(name, d) {
   KEYS.forEach(function (k) { var x = got['p:' + name + ':' + k]; if (x) prog[k] = JSON.parse(x); });
   return { ok: true, token: tok, done: doneOf(name, true), prog: prog };
 }
- 
+
 /* periodic check from the signed-in device; also stores answers in progress */
 function sync(name, d) {
   var t = tokenOf(name);
@@ -83,7 +83,7 @@ function sync(name, d) {
   var dc = cache().get('d:' + name);
   return { ok: true, done: dc ? JSON.parse(dc) : undefined };
 }
- 
+
 /* sign-out from the device that holds the current token */
 function signout(name, d) {
   if (tokenOf(name) === d.token) {
@@ -93,7 +93,7 @@ function signout(name, d) {
   }
   return { ok: true };
 }
- 
+
 /* first submission per name and subject is the official one */
 function submit(name, d) {
   var m = doneOf(name, true);
@@ -107,4 +107,3 @@ function submit(name, d) {
   cache().remove('p:' + name + ':' + d.k);
   return { ok: true };
 }
- 
