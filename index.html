@@ -1,1 +1,114 @@
+/* MCU Clerk · PLE REAP Examination · record server
+   Paste into Extensions → Apps Script of the results Google Sheet (replace everything), Save, then
+   Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy
+   (so the /exec URL stays the same). Who has access must stay: Anyone. */
 
+var SHEET_ID = '11_lpsZZjR7YlWm5B8wt2EcYcNjLGFuE3vKnO1jdYmFo';
+var KEYS = ['anat','bio','phy','micro','pharma','path','im','surg','ob','pedia','prev','legal'];
+var HEAD = ['Timestamp','Full Name','Medical School','Subject','Score','Total','Percent','Remark','Answered','Blank',
+            'Time Used','Submitted By','Tab Switches','Started','Submitted','Device ID','Answers (item:choice:correct)','Key','Data','Email'];
+var SIGNHEAD = ['Timestamp','Full Name','Device ID','Browser','Note','Email'];
+var HOURS6 = 21600;
+
+function doGet() { return out({ ok: true, service: 'MCU Clerk PLE REAP' }); }
+
+function doPost(e) {
+  var d;
+  try { d = JSON.parse(e.postData.contents); } catch (x) { return out({ ok: false, error: 'bad request' }); }
+  var name = String(d.name || '').replace(/\s+/g, ' ').trim().toUpperCase();
+  if (!name) return out({ ok: false, error: 'no name' });
+  if (d.action === 'sync') return out(sync(name, d));
+  var lock = LockService.getScriptLock();
+  lock.waitLock(28000);
+  try {
+    if (d.action === 'signin') return out(signin(name, d));
+    if (d.action === 'submit') return out(submit(name, d));
+    if (d.action === 'signout') return out(signout(name, d));
+    return out({ ok: false, error: 'unknown action' });
+  } finally { lock.releaseLock(); }
+}
+
+function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+function cache() { return CacheService.getScriptCache(); }
+function props() { return PropertiesService.getScriptProperties(); }
+function cleanEmail(x) { return String(x || '').trim().toLowerCase().slice(0, 120); }
+
+function tab(n, head) {
+  var ss = SpreadsheetApp.openById(SHEET_ID), s = ss.getSheetByName(n);
+  if (!s) { s = ss.insertSheet(n); s.appendRow(head); s.setFrozenRows(1); }
+  else if (s.getLastColumn() < head.length) s.getRange(1, 1, 1, head.length).setValues([head]); // adds the Email column
+  return s;
+}
+function log(name, d, note, email) {
+  tab('Sign-ins', SIGNHEAD).appendRow([new Date(), name, d.device || '', d.ua || '', note, email || '']);
+}
+
+/* results already recorded for this name, keyed by subject */
+function doneOf(name, fresh) {
+  var C = cache(), c = fresh ? null : C.get('d:' + name);
+  if (c) return JSON.parse(c);
+  var v = tab('Results', HEAD).getDataRange().getValues(), m = {};
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][1]).toUpperCase() === name && v[i][17] && !m[v[i][17]]) {
+      try { m[v[i][17]] = JSON.parse(v[i][18]); } catch (x) {}
+    }
+  }
+  C.put('d:' + name, JSON.stringify(m), HOURS6);
+  return m;
+}
+
+function tokenOf(name) {
+  var t = cache().get('t:' + name);
+  if (t) return t;
+  var p = props().getProperty('t:' + name);
+  t = p ? p.split('|')[0] : '';
+  if (t) cache().put('t:' + name, t, HOURS6);
+  return t;
+}
+
+/* a new sign-in replaces the token, so the previous device is signed out at its next check */
+function signin(name, d) {
+  var email = cleanEmail(d.email);
+  var tok = Utilities.getUuid(), prev = props().getProperty('t:' + name);
+  props().setProperty('t:' + name, tok + '|' + (d.device || ''));
+  if (email) props().setProperty('e:' + name, email);
+  cache().put('t:' + name, tok, HOURS6);
+  var prevDev = prev ? prev.split('|')[1] : '';
+  log(name, d, prev && prevDev !== d.device ? 'Signed out device ' + prevDev : (prev ? 'Same device' : 'First sign-in'), email);
+  var got = cache().getAll(KEYS.map(function (k) { return 'p:' + name + ':' + k; })), prog = {};
+  KEYS.forEach(function (k) { var x = got['p:' + name + ':' + k]; if (x) prog[k] = JSON.parse(x); });
+  return { ok: true, token: tok, done: doneOf(name, true), prog: prog };
+}
+
+/* periodic check from the signed-in device; also stores answers in progress */
+function sync(name, d) {
+  var t = tokenOf(name);
+  if (!t || t !== d.token) return { ok: false, out: true };
+  if (d.k && d.prog) cache().put('p:' + name + ':' + d.k, JSON.stringify(d.prog), HOURS6);
+  var dc = cache().get('d:' + name);
+  return { ok: true, done: dc ? JSON.parse(dc) : undefined };
+}
+
+/* sign-out from the device that holds the current token */
+function signout(name, d) {
+  if (tokenOf(name) === d.token) {
+    props().deleteProperty('t:' + name);
+    cache().remove('t:' + name);
+    log(name, d, 'Signed out', props().getProperty('e:' + name) || '');
+  }
+  return { ok: true };
+}
+
+/* first submission per name and subject is the official one */
+function submit(name, d) {
+  var m = doneOf(name, true);
+  if (m[d.k]) return { ok: true, dup: true, data: m[d.k] };
+  var r = d.row || {};
+  tab('Results', HEAD).appendRow([new Date(), name, r.school, r.subject, r.score, r.total, r.percent, r.remark,
+    r.answered, r.blank, r.timeUsed, r.mode, r.tabSwitches, r.started, r.submitted, r.device, r.answers,
+    d.k, JSON.stringify(d.data || {}), cleanEmail(r.email) || props().getProperty('e:' + name) || '']);
+  m[d.k] = d.data || {};
+  cache().put('d:' + name, JSON.stringify(m), HOURS6);
+  cache().remove('p:' + name + ':' + d.k);
+  return { ok: true };
+}
